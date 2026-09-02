@@ -545,6 +545,8 @@
 
   var SYNC_CONFIG_KEY = 'suivi-these-sync-config';
   var fsDb = null;
+  var cloudRef = null;
+  var recentWrites = [];
   function loadSyncConfig(){
     if (!hasLocalStorage) return null;
     try {
@@ -598,8 +600,38 @@
   function firestoreSave(){
     var db = initFirebaseIfNeeded();
     if (!db) return;
-    withTimeout(db.ref('sync/' + sanitizeKey(syncConfig.syncKey)).set({ json: JSON.stringify(state), updatedAt: Date.now() }), 6000)
+    var json = JSON.stringify(state);
+    recentWrites.push(json);
+    if (recentWrites.length > 8) recentWrites.shift();
+    withTimeout(db.ref('sync/' + sanitizeKey(syncConfig.syncKey)).set({ json: json, updatedAt: Date.now() }), 6000)
       .catch(function(e){ console.warn('Sauvegarde cloud impossible :', e); });
+  }
+
+  /* ---------- synchronisation temps réel ---------- */
+  function stopRealtimeSync(){
+    if (cloudRef) {
+      try { cloudRef.off(); } catch (e) {}
+      cloudRef = null;
+    }
+  }
+  function startRealtimeSync(){
+    stopRealtimeSync();
+    var db = initFirebaseIfNeeded();
+    if (!db || !syncConfig) return;
+    cloudRef = db.ref('sync/' + sanitizeKey(syncConfig.syncKey));
+    cloudRef.on('value', function(snap){
+      var data = snap && snap.val();
+      if (!data || !data.json) return;
+      if (recentWrites.indexOf(data.json) !== -1) return;   // notre propre écriture qui revient
+      if (data.json === JSON.stringify(state)) return;      // rien de nouveau
+      var incoming;
+      try { incoming = normalizeState(JSON.parse(data.json)); } catch (e) { return; }
+      state = incoming;
+      if (hasLocalStorage) {
+        try { window.localStorage.setItem(STORAGE_KEY, data.json); } catch (e) {}
+      }
+      renderAll();
+    }, function(err){ console.warn('Écoute temps réel interrompue :', err); });
   }
 
   async function loadState(){
@@ -831,7 +863,7 @@
     document.getElementById('storage-note').textContent = hasCloudStorage
       ? 'Sauvegarde automatique active.'
       : syncConfig
-        ? 'Synchronisation active entre appareils (clé ' + syncConfig.syncKey.slice(0, 4) + '…).'
+        ? 'Synchronisation temps réel active entre appareils (clé ' + syncConfig.syncKey.slice(0, 4) + '…).'
         : hasLocalStorage
           ? 'Sauvegarde automatique active dans ce navigateur — pensez à exporter de temps en temps pour une copie de secours.'
           : 'Pas de sauvegarde automatique disponible — pensez à exporter régulièrement.';
@@ -1269,6 +1301,7 @@
       firestoreSave();
     }
     saveSyncConfigLocal(syncConfig);
+    startRealtimeSync();
     renderAll();
     renderSyncModal();
     toast('Synchronisation activée');
@@ -1276,8 +1309,10 @@
 
   function disableSync(){
     if (!confirm('Désactiver la synchronisation sur cet appareil ? Tes données restent sauvegardées localement dans ce navigateur.')) return;
+    stopRealtimeSync();
     syncConfig = null;
     fsDb = null;
+    recentWrites = [];
     if (hasLocalStorage) { try { window.localStorage.removeItem(SYNC_CONFIG_KEY); } catch (e) {} }
     document.getElementById('sync-config-input').value = '';
     document.getElementById('sync-key-input').value = '';
@@ -1485,6 +1520,7 @@
     renderAll();
     attachEvents();
     tryAutoConfigFromHash();
+    if (!hasCloudStorage && syncConfig) startRealtimeSync();
   })();
 
 })();
