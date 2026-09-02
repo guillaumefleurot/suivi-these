@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Suivi de Thèse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #13141c;
+    --bg-alt: #1a1c26;
+    --panel: #1e212c;
+    --panel-hover: #242835;
+    --border: #3d4356;
+    --border-light: #565d75;
+    --text: #e8e4d8;
+    --muted: #8991a6;
+    --gold: #d9a441;
+    --gold-dim: #6e552a;
+    --teal: #4fa89f;
+    --teal-dim: #35706a;
+    --danger: #c4574a;
+    --danger-dim: #5c332c;
+    --font-display: 'Press Start 2P', ui-monospace, Consolas, monospace;
+    --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 16px;
+  }
+  .app { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+  .pixel-panel {
+    background: var(--panel);
+    border: 2px solid var(--border);
+    clip-path: polygon(0 10px,10px 10px,10px 0,calc(100% - 10px) 0,calc(100% - 10px) 10px,100% 10px,100% calc(100% - 10px),calc(100% - 10px) calc(100% - 10px),calc(100% - 10px) 100%,10px 100%,10px calc(100% - 10px),0 calc(100% - 10px));
+    padding: 14px 16px;
+  }
+  .pixel-panel-sm {
+    clip-path: polygon(0 6px,6px 6px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 6px) calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 6px),0 calc(100% - 6px));
+  }
+
+  /* ---------- HUD header ---------- */
+  .hud { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .hud-title { display: flex; align-items: center; gap: 10px; }
+  .hud-mark { color: var(--gold); font-size: 18px; }
+  .hud-name { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.5px; }
+  .hud-stats { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px; justify-content: center; }
+  .hud-level { font-size: 12px; color: var(--gold); white-space: nowrap; }
+  .xp-bar-track {
+    flex: 1; max-width: 240px; height: 14px; background: var(--bg-alt); border: 2px solid var(--border);
+    position: relative; overflow: hidden;
+  }
+  .xp-bar-fill {
+    height: 100%; background: var(--gold); width: 0%;
+    background-image: repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(0,0,0,0.35) 5px, rgba(0,0,0,0.35) 7px);
+    transition: width .4s steps(10);
+  }
+  .hud-streak { font-size: 13px; white-space: nowrap; }
+  .hud-actions { display: flex; gap: 8px; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    font-family: var(--font-mono); font-size: 12px; padding: 8px 12px; cursor: pointer;
+    border: 2px solid var(--border); background: var(--bg-alt); color: var(--text);
+    clip-path: polygon(0 6px,6px 6px,6px 0,calc(100% - 6px) 0,calc(100% - 6px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 6px) calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 6px),0 calc(100% - 6px));
+  }
+  .btn:hover { background: var(--panel-hover); border-color: var(--border-light); }
+  .btn:active { transform: translateY(1px); }
+  .btn-ghost { background: transparent; }
+  .btn-accent { background: var(--gold-dim); border-color: var(--gold); color: var(--text); }
+  .btn-accent:hover { background: var(--gold); color: var(--bg); }
+  .btn-danger { background: transparent; border-color: var(--danger-dim); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-dim); color: var(--text); }
+  .btn-accent-teal { background: var(--teal-dim); border-color: var(--teal); color: var(--text); }
+  .btn-accent-teal:hover { background: var(--teal); color: var(--bg); }
+
+  /* ---------- tabs ---------- */
+  .tabs { display: flex; gap: 8px; }
+  .tab-btn {
+    font-family: var(--font-mono); font-size: 13px; padding: 10px 16px; cursor: pointer;
+    background: var(--bg-alt); border: 2px solid var(--border); color: var(--muted);
+  }
+  .tab-btn.active { background: var(--panel); color: var(--gold); border-color: var(--gold-dim); }
+  .tab-btn.agenda-tab.active { color: var(--teal); border-color: var(--teal-dim); }
+
+  /* ---------- quest list ---------- */
+  .quests-header { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+  .quest-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .quest-row {
+    display: flex; align-items: center; gap: 10px; background: var(--panel); border: 2px solid var(--border);
+    padding: 10px 12px;
+  }
+  .quest-row.done { border-color: var(--teal-dim); }
+  .quest-check {
+    appearance: none; width: 20px; height: 20px; min-width: 20px; border: 2px solid var(--border-light);
+    background: var(--bg-alt); cursor: pointer; position: relative;
+  }
+  .quest-check:checked { background: var(--teal); border-color: var(--teal); }
+  .quest-check:checked::after {
+    content: ''; position: absolute; left: 4px; top: 1px; width: 7px; height: 11px;
+    border-right: 2px solid var(--bg); border-bottom: 2px solid var(--bg); transform: rotate(40deg);
+  }
+  .quest-label { flex: 1; }
+  .quest-row.done .quest-label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--teal-dim); }
+  .quest-xp { font-size: 11px; color: var(--gold); white-space: nowrap; }
+
+  .manage-quests { margin-bottom: 14px; }
+  .manage-quests summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .manage-quests summary:hover { color: var(--text); }
+  .manage-quests-body { margin-top: 10px; }
+  .template-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .template-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .template-row button { margin-left: auto; }
+  .inline-form { display: flex; gap: 8px; }
+  .inline-form input { flex: 1; }
+
+  /* ---------- inputs ---------- */
+  input[type="text"], textarea {
+    font-family: var(--font-mono); font-size: 13px; background: var(--bg-alt); color: var(--text);
+    border: 2px solid var(--border); padding: 8px 10px; width: 100%;
+  }
+  input:focus, textarea:focus, .quest-check:focus-visible, .btn:focus-visible, .tab-btn:focus-visible {
+    outline: 2px solid var(--gold); outline-offset: 2px;
+  }
+
+  /* ---------- streak strip ---------- */
+  .streak-strip-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .streak-strip { display: flex; gap: 4px; flex-wrap: wrap; }
+  .streak-day { width: 18px; height: 18px; border: 2px solid var(--border); background: var(--bg-alt); }
+  .streak-day.filled { background: var(--teal); border-color: var(--teal); }
+  .streak-day.today { border-color: var(--gold); }
+
+  /* ---------- matrix ---------- */
+  .matrix-toolbar { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .search-wrap { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 180px; background: var(--bg-alt); border: 2px solid var(--border); padding: 0 10px; }
+  .search-prompt { color: var(--gold); }
+  .search-wrap input { border: none; background: transparent; padding: 8px 0; }
+  .search-wrap input:focus { outline: none; }
+
+  .table-wrap { overflow-x: auto; padding: 0; background: var(--panel); border: 2px solid var(--border); }
+  .lit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lit-table th, .lit-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .lit-table th { color: var(--muted); font-weight: normal; font-size: 12px; border-bottom: 2px solid var(--border); cursor: pointer; white-space: nowrap; }
+  .lit-table th:hover { color: var(--text); }
+  .lit-table tbody tr:hover { background: var(--panel-hover); }
+  .cell-title { max-width: 220px; }
+  .cell-gap { max-width: 220px; color: var(--teal); }
+  .tag { display: inline-block; background: var(--bg-alt); border: 1px solid var(--border); padding: 2px 6px; font-size: 11px; margin: 2px 4px 2px 0; color: var(--muted); }
+  .row-actions { display: flex; gap: 6px; white-space: nowrap; }
+  .row-actions button { font-size: 11px; padding: 5px 8px; }
+  .empty-state { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 13px; margin: 0; }
+
+  /* ---------- modal ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10,11,15,0.7); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+  }
+  .modal {
+    width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+    background: var(--panel); border: 2px solid var(--border); padding: 16px;
+  }
+  .modal h2 { font-family: var(--font-display); font-size: 13px; margin: 0 0 8px; color: var(--gold); font-weight: normal; }
+  .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .form-error { color: var(--danger); font-size: 12px; margin: 0; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+  /* ---------- toast ---------- */
+  #toast-layer { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; pointer-events: none; }
+  .toast {
+    background: var(--gold); color: var(--bg); font-size: 12px; padding: 8px 12px; border: 2px solid var(--bg);
+    animation: toast-rise 1.6s ease forwards;
+  }
+  @keyframes toast-rise {
+    0% { opacity: 0; transform: translateY(6px); }
+    10% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-10px); }
+  }
+
+  .app-footer { text-align: center; font-size: 11px; color: var(--muted); padding: 8px 0 20px; }
+
+  /* ---------- agenda (visuellement dissocié : accent teal, grille sobre sans coins crantés) ---------- */
+  .agenda-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .agenda-month-label { flex: 1; text-align: center; color: var(--teal); font-size: 13px; text-transform: capitalize; }
+  .agenda-header .btn:hover { border-color: var(--teal); color: var(--teal); }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); border: 2px solid var(--teal-dim); background: var(--bg-alt); }
+  .cal-weekday { text-align: center; font-size: 11px; color: var(--muted); padding: 8px 4px; border-bottom: 2px solid var(--teal-dim); }
+  .cal-day { position: relative; min-height: 64px; padding: 6px; border: 1px solid var(--border); cursor: pointer; }
+  .cal-day:hover { background: var(--panel-hover); }
+  .cal-day.outside { color: var(--muted); opacity: .45; }
+  .cal-day.today { background: rgba(79, 168, 159, 0.14); }
+  .cal-day.today .cal-day-num { color: var(--teal); font-weight: bold; }
+  .cal-day-num { font-size: 12px; }
+  .cal-day-dot { display: block; width: 6px; height: 6px; background: var(--teal); border-radius: 50%; position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); }
+
+  .cal-popover {
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px;
+    min-width: 220px; max-width: 280px; background: var(--panel); border: 2px solid var(--teal-dim);
+    padding: 10px 12px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .12s;
+    z-index: 30; text-align: left;
+  }
+  .cal-day:hover .cal-popover { opacity: 1; pointer-events: auto; }
+  .cal-popover-date { color: var(--teal); margin-bottom: 6px; text-transform: capitalize; }
+  .cal-popover-event { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .cal-popover-event:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .cal-popover-event-head { color: var(--text); }
+  .cal-popover-notes { color: var(--muted); white-space: pre-wrap; margin-top: 2px; word-break: break-word; }
+  .cal-popover-notes a { color: var(--teal); }
+
+  .agenda-existing { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+  .agenda-existing-label { font-size: 11px; color: var(--muted); }
+  .agenda-existing-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; background: var(--bg-alt); border: 1px solid var(--border); padding: 6px 8px; }
+  .agenda-sep { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+
+  @media (max-width: 600px) {
+    body { padding: 10px; font-size: 13px; }
+    .hud { flex-direction: column; align-items: stretch; }
+    .hud-stats { order: 2; justify-content: flex-start; }
+    .hud-actions { order: 3; justify-content: flex-end; }
+    .xp-bar-track { max-width: none; }
+    .cal-day { min-height: 42px; padding: 4px; font-size: 11px; }
+    .cal-popover { min-width: 180px; max-width: 220px; font-size: 11px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="hud pixel-panel">
+      <div class="hud-title">
+        <span class="hud-mark">&#9670;</span>
+        <span class="hud-name">Suivi de Thèse</span>
+      </div>
+      <div class="hud-stats">
+        <div class="hud-level">Niv. <span id="level-num">1</span></div>
+        <div class="xp-bar-track"><div class="xp-bar-fill" id="xp-fill"></div></div>
+        <div class="hud-streak">&#128293;<span id="streak-num">0</span></div>
+      </div>
+      <div class="hud-actions">
+        <button id="btn-export" class="btn btn-ghost" type="button" title="Exporter les données">Exporter</button>
+        <button id="btn-import" class="btn btn-ghost" type="button" title="Importer des données">Importer</button>
+        <input type="file" id="import-file" accept="application/json" hidden>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" type="button" data-tab="quests">Quêtes du jour</button>
+      <button class="tab-btn" type="button" data-tab="weekly">Quêtes de la semaine</button>
+      <button class="tab-btn" type="button" data-tab="matrix">Matrice de littérature</button>
+      <button class="tab-btn agenda-tab" type="button" data-tab="agenda">Agenda</button>
+    </nav>
+
+    <main>
+      <section id="tab-quests" class="tab-panel">
+        <div class="quests-header" id="today-date"></div>
+        <ul class="quest-list" id="quest-list"></ul>
+
+        <details class="manage-quests pixel-panel">
+          <summary>Gérer les quêtes récurrentes</summary>
+          <div class="manage-quests-body">
+            <ul id="template-list" class="template-list"></ul>
+            <div id="add-template-form" class="inline-form">
+              <input type="text" id="new-template-label" placeholder="Nouvelle quête récurrente…" maxlength="80">
+              <button type="button" class="btn btn-accent" id="btn-add-template">Ajouter</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="streak-strip-wrap pixel-panel">
+          <div class="streak-strip-label">14 derniers jours</div>
+          <div class="streak-strip" id="streak-strip"></div>
+        </div>
+      </section>
+
+      <section id="tab-weekly" class="tab-panel" hidden>
+        <div class="quests-header" id="week-label"></div>
+        <ul class="quest-list" id="weekly-quest-list"></ul>
+
+        <details class="manage-quests pixel-panel">
+          <summary>Gérer les quêtes hebdomadaires</summary>
+          <div class="manage-quests-body">
+            <ul id="weekly-template-list" class="template-list"></ul>
+            <div id="add-weekly-template-form" class="inline-form">
+              <input type="text" id="new-weekly-template-label" placeholder="Nouvelle quête hebdomadaire…" maxlength="80">
+              <button type="button" class="btn btn-accent" id="btn-add-weekly-template">Ajouter</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="streak-strip-wrap pixel-panel">
+          <div class="streak-strip-label">8 dernières semaines</div>
+          <div class="streak-strip" id="week-strip"></div>
+        </div>
+      </section>
+
+      <section id="tab-matrix" class="tab-panel" hidden>
+        <div class="matrix-toolbar">
+          <div class="search-wrap">
+            <span class="search-prompt">&gt;</span>
+            <input type="text" id="search-input" placeholder="rechercher…" autocomplete="off">
+          </div>
+          <button id="btn-add-entry" class="btn btn-accent" type="button">+ Nouvelle référence</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="lit-table" id="lit-table" hidden>
+            <thead>
+              <tr>
+                <th data-sort="authors">Auteurs</th>
+                <th data-sort="year">Année</th>
+                <th>Titre</th>
+                <th>Gap littéraire</th>
+                <th>Mots-clés</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="lit-tbody"></tbody>
+          </table>
+          <p class="empty-state" id="empty-state">Aucune référence pour le moment — ajoutez votre première lecture avec « + Nouvelle référence ».</p>
+        </div>
+      </section>
+
+      <section id="tab-agenda" class="tab-panel agenda-panel" hidden>
+        <div class="agenda-header">
+          <button class="btn btn-ghost" id="cal-prev" type="button">&lt;</button>
+          <div class="agenda-month-label" id="cal-month-label"></div>
+          <button class="btn btn-ghost" id="cal-next" type="button">&gt;</button>
+          <button class="btn btn-ghost" id="cal-today" type="button">Aujourd'hui</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </section>
+    </main>
+
+    <footer class="app-footer" id="storage-note"></footer>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" id="entry-form">
+      <h2 id="modal-title">Nouvelle référence</h2>
+      <input type="hidden" id="entry-id">
+      <label>Auteurs<input type="text" id="f-authors" placeholder="Nom, A. &amp; Nom, B."></label>
+      <label>Année<input type="text" id="f-year" placeholder="2024" inputmode="numeric"></label>
+      <label>Titre<input type="text" id="f-title"></label>
+      <label>Source / revue<input type="text" id="f-source"></label>
+      <label>Méthode<input type="text" id="f-method"></label>
+      <label>Résultats clés<textarea id="f-findings" rows="2"></textarea></label>
+      <label>Gap littéraire<textarea id="f-gap" rows="2"></textarea></label>
+      <label>Mots-clés<input type="text" id="f-keywords" placeholder="séparés, par, des, virgules"></label>
+      <label>Notes<textarea id="f-notes" rows="2"></textarea></label>
+      <p class="form-error" id="form-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btn-cancel">Annuler</button>
+        <button type="button" class="btn btn-accent" id="btn-save-entry">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="agenda-modal-overlay" hidden>
+    <div class="modal" id="agenda-modal">
+      <h2>Rendez-vous — <span id="agenda-modal-date"></span></h2>
+      <input type="hidden" id="ag-event-id">
+      <input type="hidden" id="ag-event-date">
+      <div class="agenda-existing" id="agenda-existing-list"></div>
+      <hr class="agenda-sep">
+      <label>Heure (optionnel)<input type="text" id="ag-time" placeholder="14:30"></label>
+      <label>Titre<input type="text" id="ag-title" placeholder="Réunion avec…"></label>
+      <label>Notes (les liens http(s) deviennent cliquables)<textarea id="ag-notes" rows="3" placeholder="https://…"></textarea></label>
+      <p class="form-error" id="agenda-form-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="ag-btn-cancel">Fermer</button>
+        <button type="button" class="btn btn-accent-teal" id="ag-btn-save">Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-layer" aria-live="polite"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  function reportFatalError(msg){
+    var bar = document.getElementById('fatal-error-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'fatal-error-bar';
+      bar.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c4574a;color:#fff;padding:10px 14px;font-family:monospace;font-size:12px;z-index:9999;white-space:pre-wrap;';
+      document.body.appendChild(bar);
+    }
+    bar.textContent = 'Erreur : ' + msg;
+  }
+  window.addEventListener('error', function(e){
+    reportFatalError((e.error && e.error.message) || e.message || 'erreur inconnue');
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    reportFatalError('promesse rejetée : ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+
+  var STORAGE_KEY = 'suivi-these-state';
+  var XP_PER_QUEST = 10;
+  var XP_PER_WEEKLY_QUEST = 30;
+  var XP_PER_ENTRY = 15;
+
+  /* ---------- utils ---------- */
+  function uid(){
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) { /* repli ci-dessous */ }
+    return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+  function pad(n){ return String(n).padStart(2, '0'); }
+  function dateKey(d){ d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function mondayOf(d){
+    d = new Date(d || new Date());
+    var day = d.getDay();
+    var diff = (day === 0 ? -6 : 1 - day);
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
+  function weekKey(d){ return dateKey(mondayOf(d)); }
+  function normalize(s){
+    return (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  function escapeHtml(s){
+    return (s || '').toString()
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function linkify(escapedText){
+    return escapedText.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?'")\]])/g, function(url){
+      return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+    });
+  }
+
+  /* ---------- state ---------- */
+  function defaultState(){
+    return {
+      literature: [],
+      quests: {
+        templates: [
+          { id: uid(), label: 'Lire un article scientifique' },
+          { id: uid(), label: 'Écrire ou avancer sur la thèse' },
+          { id: uid(), label: 'Mettre à jour la matrice de littérature' }
+        ],
+        log: {},
+        weeklyTemplates: [
+          { id: uid(), label: 'Faire le bilan de la semaine' },
+          { id: uid(), label: 'Planifier la semaine suivante' },
+          { id: uid(), label: 'Avancer sur un chapitre de la thèse' }
+        ],
+        weeklyLog: {}
+      },
+      agenda: { events: [] },
+      stats: { xp: 0 }
+    };
+  }
+  function normalizeState(s){
+    var d = defaultState();
+    if (!s || typeof s !== 'object') return d;
+    return {
+      literature: Array.isArray(s.literature) ? s.literature : d.literature,
+      quests: {
+        templates: (s.quests && Array.isArray(s.quests.templates)) ? s.quests.templates : d.quests.templates,
+        log: (s.quests && s.quests.log && typeof s.quests.log === 'object') ? s.quests.log : d.quests.log,
+        weeklyTemplates: (s.quests && Array.isArray(s.quests.weeklyTemplates)) ? s.quests.weeklyTemplates : d.quests.weeklyTemplates,
+        weeklyLog: (s.quests && s.quests.weeklyLog && typeof s.quests.weeklyLog === 'object') ? s.quests.weeklyLog : d.quests.weeklyLog
+      },
+      agenda: {
+        events: (s.agenda && Array.isArray(s.agenda.events)) ? s.agenda.events : d.agenda.events
+      },
+      stats: { xp: Number(s.stats && s.stats.xp) || 0 }
+    };
+  }
+
+  var state = defaultState();
+  var activeTab = 'quests';
+  var calViewDate = new Date();
+  var sortKey = 'year';
+  var sortDir = 'desc';
+  var searchQuery = '';
+  var hasCloudStorage = (typeof window.storage !== 'undefined');
+  var hasLocalStorage = (function(){
+    try {
+      window.localStorage.setItem('__test__', '1');
+      window.localStorage.removeItem('__test__');
+      return true;
+    } catch (e) { return false; }
+  })();
+
+  function withTimeout(promise, ms){
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms); })
+    ]);
+  }
+
+  async function loadState(){
+    if (hasCloudStorage) {
+      try {
+        var res = await withTimeout(window.storage.get(STORAGE_KEY, false), 4000);
+        if (res && res.value) return normalizeState(JSON.parse(res.value));
+      } catch (e) { /* pas encore de données sauvegardées, ou stockage indisponible */ }
+    } else if (hasLocalStorage) {
+      try {
+        var raw = window.localStorage.getItem(STORAGE_KEY);
+        if (raw) return normalizeState(JSON.parse(raw));
+      } catch (e) { /* rien à charger */ }
+    }
+    return defaultState();
+  }
+  function persist(){
+    if (hasCloudStorage) {
+      withTimeout(window.storage.set(STORAGE_KEY, JSON.stringify(state), false), 4000)
+        .catch(function(e){ console.warn('Sauvegarde automatique indisponible :', e); });
+    } else if (hasLocalStorage) {
+      try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+      catch (e) { console.warn('Sauvegarde locale indisponible :', e); }
+    }
+  }
+
+  /* ---------- xp / level ---------- */
+  function levelFor(xp){ return Math.floor(xp / 100) + 1; }
+  function xpIntoLevel(xp){ return xp % 100; }
+
+  function computeStreak(){
+    var log = state.quests.log;
+    var streak = 0;
+    var cur = new Date();
+    var todayEntry = log[dateKey(cur)];
+    var todayHasProgress = !!(todayEntry && todayEntry.completed && todayEntry.completed.length > 0);
+    if (!todayHasProgress) cur.setDate(cur.getDate() - 1);
+    while (true) {
+      var k = dateKey(cur);
+      var entry = log[k];
+      if (entry && entry.completed && entry.completed.length > 0) {
+        streak++;
+        cur.setDate(cur.getDate() - 1);
+      } else break;
+    }
+    return streak;
+  }
+
+  /* ---------- toast ---------- */
+  function toast(msg){
+    var layer = document.getElementById('toast-layer');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    layer.appendChild(el);
+    setTimeout(function(){ el.remove(); }, 1700);
+  }
+
+  /* ---------- render ---------- */
+  function renderHud(){
+    var xp = state.stats.xp;
+    document.getElementById('level-num').textContent = levelFor(xp);
+    document.getElementById('xp-fill').style.width = xpIntoLevel(xp) + '%';
+    document.getElementById('streak-num').textContent = computeStreak();
+  }
+
+  function renderQuests(){
+    var list = document.getElementById('quest-list');
+    var today = dateKey();
+    var todaysLog = state.quests.log[today] || { completed: [] };
+    list.innerHTML = '';
+    state.quests.templates.forEach(function(t){
+      var done = todaysLog.completed.indexOf(t.id) !== -1;
+      var li = document.createElement('li');
+      li.className = 'quest-row' + (done ? ' done' : '');
+      li.innerHTML =
+        '<input type="checkbox" class="quest-check" data-id="' + t.id + '" ' + (done ? 'checked' : '') + '>' +
+        '<span class="quest-label">' + escapeHtml(t.label) + '</span>' +
+        '<span class="quest-xp">+' + XP_PER_QUEST + ' xp</span>';
+      list.appendChild(li);
+    });
+
+    document.getElementById('today-date').textContent =
+      new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    var tlist = document.getElementById('template-list');
+    tlist.innerHTML = '';
+    state.quests.templates.forEach(function(t){
+      var row = document.createElement('li');
+      row.className = 'template-row';
+      row.innerHTML = '<span>' + escapeHtml(t.label) + '</span><button type="button" class="btn btn-danger" data-remove-template="' + t.id + '">Retirer</button>';
+      tlist.appendChild(row);
+    });
+
+    renderStreakStrip();
+  }
+
+  function renderStreakStrip(){
+    var strip = document.getElementById('streak-strip');
+    strip.innerHTML = '';
+    var today = dateKey();
+    for (var i = 13; i >= 0; i--) {
+      var d = new Date();
+      d.setDate(d.getDate() - i);
+      var k = dateKey(d);
+      var entry = state.quests.log[k];
+      var filled = !!(entry && entry.completed && entry.completed.length > 0);
+      var el = document.createElement('div');
+      el.className = 'streak-day' + (filled ? ' filled' : '') + (k === today ? ' today' : '');
+      el.title = d.toLocaleDateString('fr-FR');
+      strip.appendChild(el);
+    }
+  }
+
+  function renderWeeklyQuests(){
+    var list = document.getElementById('weekly-quest-list');
+    var wk = weekKey();
+    var wLog = state.quests.weeklyLog[wk] || { completed: [] };
+    list.innerHTML = '';
+    state.quests.weeklyTemplates.forEach(function(t){
+      var done = wLog.completed.indexOf(t.id) !== -1;
+      var li = document.createElement('li');
+      li.className = 'quest-row' + (done ? ' done' : '');
+      li.innerHTML =
+        '<input type="checkbox" class="quest-check weekly-check" data-id="' + t.id + '" ' + (done ? 'checked' : '') + '>' +
+        '<span class="quest-label">' + escapeHtml(t.label) + '</span>' +
+        '<span class="quest-xp">+' + XP_PER_WEEKLY_QUEST + ' xp</span>';
+      list.appendChild(li);
+    });
+
+    var monday = mondayOf();
+    var sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    document.getElementById('week-label').textContent =
+      'Semaine du ' + monday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) +
+      ' au ' + sunday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    var tlist = document.getElementById('weekly-template-list');
+    tlist.innerHTML = '';
+    state.quests.weeklyTemplates.forEach(function(t){
+      var row = document.createElement('li');
+      row.className = 'template-row';
+      row.innerHTML = '<span>' + escapeHtml(t.label) + '</span><button type="button" class="btn btn-danger" data-remove-weekly-template="' + t.id + '">Retirer</button>';
+      tlist.appendChild(row);
+    });
+
+    renderWeekStrip();
+  }
+
+  function renderWeekStrip(){
+    var strip = document.getElementById('week-strip');
+    strip.innerHTML = '';
+    var curWk = weekKey();
+    for (var i = 7; i >= 0; i--) {
+      var d = new Date();
+      d.setDate(d.getDate() - i * 7);
+      var k = weekKey(d);
+      var entry = state.quests.weeklyLog[k];
+      var filled = !!(entry && entry.completed && entry.completed.length > 0);
+      var el = document.createElement('div');
+      el.className = 'streak-day' + (filled ? ' filled' : '') + (k === curWk ? ' today' : '');
+      el.title = 'Semaine du ' + mondayOf(d).toLocaleDateString('fr-FR');
+      strip.appendChild(el);
+    }
+  }
+
+  function getFilteredSortedLiterature(){
+    var items = state.literature.slice();
+    if (searchQuery) {
+      var nq = normalize(searchQuery);
+      items = items.filter(function(e){
+        return ['authors', 'title', 'source', 'method', 'findings', 'gap', 'keywords', 'notes']
+          .some(function(f){ return normalize(e[f]).indexOf(nq) !== -1; });
+      });
+    }
+    items.sort(function(a, b){
+      var av = a[sortKey] || '', bv = b[sortKey] || '';
+      if (sortKey === 'year') { av = parseInt(av) || 0; bv = parseInt(bv) || 0; }
+      else { av = normalize(av); bv = normalize(bv); }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }
+
+  function renderMatrix(){
+    var tbody = document.getElementById('lit-tbody');
+    var items = getFilteredSortedLiterature();
+    tbody.innerHTML = '';
+    document.getElementById('empty-state').hidden = items.length > 0;
+    document.getElementById('lit-table').hidden = items.length === 0;
+
+    items.forEach(function(e){
+      var tr = document.createElement('tr');
+      tr.dataset.id = e.id;
+      var kws = (e.keywords || '').split(',').map(function(k){ return k.trim(); }).filter(Boolean)
+        .map(function(k){ return '<span class="tag">' + escapeHtml(k) + '</span>'; }).join('');
+      tr.innerHTML =
+        '<td>' + escapeHtml(e.authors) + '</td>' +
+        '<td>' + escapeHtml(e.year) + '</td>' +
+        '<td class="cell-title">' + escapeHtml(e.title) + '</td>' +
+        '<td class="cell-gap">' + escapeHtml(e.gap) + '</td>' +
+        '<td>' + kws + '</td>' +
+        '<td class="row-actions">' +
+          '<button type="button" class="btn btn-ghost" data-edit="' + e.id + '">Modifier</button>' +
+          '<button type="button" class="btn btn-danger" data-delete="' + e.id + '">Supprimer</button>' +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderAll(){
+    renderHud();
+    renderQuests();
+    renderWeeklyQuests();
+    renderMatrix();
+    renderAgenda();
+    document.getElementById('storage-note').textContent = hasCloudStorage
+      ? 'Sauvegarde automatique active.'
+      : hasLocalStorage
+        ? 'Sauvegarde automatique active dans ce navigateur — pensez à exporter de temps en temps pour une copie de secours.'
+        : 'Pas de sauvegarde automatique disponible — pensez à exporter régulièrement.';
+  }
+
+  function getEventsForDate(k){
+    return state.agenda.events.filter(function(e){ return e.date === k; })
+      .sort(function(a, b){ return (a.time || '').localeCompare(b.time || ''); });
+  }
+
+  function renderAgenda(){
+    var label = calViewDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    document.getElementById('cal-month-label').textContent = label.charAt(0).toUpperCase() + label.slice(1);
+
+    var grid = document.getElementById('cal-grid');
+    grid.innerHTML = '';
+
+    ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].forEach(function(wd){
+      var h = document.createElement('div');
+      h.className = 'cal-weekday';
+      h.textContent = wd;
+      grid.appendChild(h);
+    });
+
+    var year = calViewDate.getFullYear();
+    var month = calViewDate.getMonth();
+    var firstOfMonth = new Date(year, month, 1);
+    var startOffset = (firstOfMonth.getDay() + 6) % 7;
+    var gridStart = new Date(year, month, 1 - startOffset);
+    var todayKeyStr = dateKey();
+
+    for (var i = 0; i < 42; i++) {
+      var d = new Date(gridStart);
+      d.setDate(d.getDate() + i);
+      var k = dateKey(d);
+      var inMonth = d.getMonth() === month;
+      var events = getEventsForDate(k);
+
+      var cell = document.createElement('div');
+      cell.className = 'cal-day' + (inMonth ? '' : ' outside') + (k === todayKeyStr ? ' today' : '') + (events.length ? ' has-events' : '');
+      cell.dataset.date = k;
+
+      var num = document.createElement('span');
+      num.className = 'cal-day-num';
+      num.textContent = d.getDate();
+      cell.appendChild(num);
+
+      if (events.length) {
+        var dot = document.createElement('span');
+        dot.className = 'cal-day-dot';
+        cell.appendChild(dot);
+
+        var pop = document.createElement('div');
+        pop.className = 'cal-popover';
+        var dateLabel = document.createElement('div');
+        dateLabel.className = 'cal-popover-date';
+        dateLabel.textContent = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        pop.appendChild(dateLabel);
+        events.forEach(function(ev){
+          var evEl = document.createElement('div');
+          evEl.className = 'cal-popover-event';
+          var head = document.createElement('div');
+          head.className = 'cal-popover-event-head';
+          head.textContent = (ev.time ? ev.time + ' — ' : '') + ev.title;
+          evEl.appendChild(head);
+          if (ev.notes) {
+            var notesEl = document.createElement('div');
+            notesEl.className = 'cal-popover-notes';
+            notesEl.innerHTML = linkify(escapeHtml(ev.notes));
+            evEl.appendChild(notesEl);
+          }
+          pop.appendChild(evEl);
+        });
+        cell.appendChild(pop);
+      }
+
+      grid.appendChild(cell);
+    }
+  }
+
+  /* ---------- actions ---------- */
+  function toggleQuest(templateId){
+    var k = dateKey();
+    if (!state.quests.log[k]) state.quests.log[k] = { completed: [] };
+    var arr = state.quests.log[k].completed;
+    var idx = arr.indexOf(templateId);
+    if (idx === -1) {
+      arr.push(templateId);
+      state.stats.xp += XP_PER_QUEST;
+      toast('+' + XP_PER_QUEST + ' XP');
+    } else {
+      arr.splice(idx, 1);
+      state.stats.xp = Math.max(0, state.stats.xp - XP_PER_QUEST);
+    }
+    renderAll();
+    persist();
+  }
+
+  function addTemplate(label){
+    state.quests.templates.push({ id: uid(), label: label });
+    renderQuests();
+    persist();
+  }
+  function removeTemplate(id){
+    state.quests.templates = state.quests.templates.filter(function(t){ return t.id !== id; });
+    renderQuests();
+    persist();
+  }
+
+  function toggleWeeklyQuest(templateId){
+    var wk = weekKey();
+    if (!state.quests.weeklyLog[wk]) state.quests.weeklyLog[wk] = { completed: [] };
+    var arr = state.quests.weeklyLog[wk].completed;
+    var idx = arr.indexOf(templateId);
+    if (idx === -1) {
+      arr.push(templateId);
+      state.stats.xp += XP_PER_WEEKLY_QUEST;
+      toast('+' + XP_PER_WEEKLY_QUEST + ' XP');
+    } else {
+      arr.splice(idx, 1);
+      state.stats.xp = Math.max(0, state.stats.xp - XP_PER_WEEKLY_QUEST);
+    }
+    renderHud();
+    renderWeeklyQuests();
+    persist();
+  }
+  function addWeeklyTemplate(label){
+    state.quests.weeklyTemplates.push({ id: uid(), label: label });
+    renderWeeklyQuests();
+    persist();
+  }
+  function removeWeeklyTemplate(id){
+    state.quests.weeklyTemplates = state.quests.weeklyTemplates.filter(function(t){ return t.id !== id; });
+    renderWeeklyQuests();
+    persist();
+  }
+
+  function openModal(entry){
+    document.getElementById('form-error').hidden = true;
+    document.getElementById('modal-title').textContent = entry ? 'Modifier la référence' : 'Nouvelle référence';
+    document.getElementById('entry-id').value = entry ? entry.id : '';
+    document.getElementById('f-authors').value = entry ? entry.authors : '';
+    document.getElementById('f-year').value = entry ? entry.year : '';
+    document.getElementById('f-title').value = entry ? entry.title : '';
+    document.getElementById('f-source').value = entry ? entry.source : '';
+    document.getElementById('f-method').value = entry ? entry.method : '';
+    document.getElementById('f-findings').value = entry ? entry.findings : '';
+    document.getElementById('f-gap').value = entry ? entry.gap : '';
+    document.getElementById('f-keywords').value = entry ? entry.keywords : '';
+    document.getElementById('f-notes').value = entry ? entry.notes : '';
+    var overlay = document.getElementById('modal-overlay');
+    overlay.hidden = false;
+    overlay.style.display = 'flex';
+    document.getElementById('f-authors').focus();
+  }
+  function closeModal(){
+    var overlay = document.getElementById('modal-overlay');
+    overlay.hidden = true;
+    overlay.style.display = 'none';
+  }
+
+  function submitEntry(ev){
+    try {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      var formError = document.getElementById('form-error');
+      var data = {
+        authors: document.getElementById('f-authors').value.trim(),
+        year: document.getElementById('f-year').value.trim(),
+        title: document.getElementById('f-title').value.trim(),
+        source: document.getElementById('f-source').value.trim(),
+        method: document.getElementById('f-method').value.trim(),
+        findings: document.getElementById('f-findings').value.trim(),
+        gap: document.getElementById('f-gap').value.trim(),
+        keywords: document.getElementById('f-keywords').value.trim(),
+        notes: document.getElementById('f-notes').value.trim()
+      };
+      if (!data.authors || !data.title) {
+        formError.textContent = 'Merci de renseigner au moins les auteurs et le titre.';
+        formError.hidden = false;
+        return;
+      }
+      formError.hidden = true;
+      var id = document.getElementById('entry-id').value;
+      if (id) {
+        var entry = state.literature.find(function(e){ return e.id === id; });
+        if (entry) Object.assign(entry, data);
+      } else {
+        var newEntry = Object.assign({ id: uid(), xpAwarded: XP_PER_ENTRY, dateAdded: dateKey() }, data);
+        state.literature.push(newEntry);
+        state.stats.xp += XP_PER_ENTRY;
+        toast('+' + XP_PER_ENTRY + ' XP');
+      }
+      closeModal();
+      renderAll();
+      persist();
+    } catch (err) {
+      var fe = document.getElementById('form-error');
+      fe.textContent = 'Erreur inattendue : ' + err.message;
+      fe.hidden = false;
+      console.error(err);
+    }
+  }
+
+  function deleteEntry(id){
+    var entry = state.literature.find(function(e){ return e.id === id; });
+    if (!entry) return;
+    if (!confirm('Supprimer la référence « ' + (entry.title || entry.authors) + ' » ?')) return;
+    state.stats.xp = Math.max(0, state.stats.xp - (entry.xpAwarded || 0));
+    state.literature = state.literature.filter(function(e){ return e.id !== id; });
+    renderAll();
+    persist();
+  }
+
+  /* ---------- agenda ---------- */
+  function openDayModal(dateStr){
+    document.getElementById('agenda-form-error').hidden = true;
+    document.getElementById('ag-event-id').value = '';
+    document.getElementById('ag-event-date').value = dateStr;
+    document.getElementById('ag-time').value = '';
+    document.getElementById('ag-title').value = '';
+    document.getElementById('ag-notes').value = '';
+    document.getElementById('ag-btn-save').textContent = 'Ajouter';
+
+    var d = new Date(dateStr + 'T00:00:00');
+    document.getElementById('agenda-modal-date').textContent =
+      d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    renderExistingEventsList(dateStr);
+
+    var overlay = document.getElementById('agenda-modal-overlay');
+    overlay.hidden = false;
+    overlay.style.display = 'flex';
+    document.getElementById('ag-time').focus();
+  }
+  function closeDayModal(){
+    var overlay = document.getElementById('agenda-modal-overlay');
+    overlay.hidden = true;
+    overlay.style.display = 'none';
+  }
+
+  function renderExistingEventsList(dateStr){
+    var list = document.getElementById('agenda-existing-list');
+    var events = getEventsForDate(dateStr);
+    if (!events.length) { list.innerHTML = ''; return; }
+    list.innerHTML = '<div class="agenda-existing-label">Déjà noté :</div>' + events.map(function(ev){
+      return '<div class="agenda-existing-item">' +
+        '<span>' + (ev.time ? escapeHtml(ev.time) + ' — ' : '') + escapeHtml(ev.title) + '</span>' +
+        '<span class="row-actions">' +
+          '<button type="button" class="btn btn-ghost" data-ag-edit="' + ev.id + '">Modifier</button>' +
+          '<button type="button" class="btn btn-danger" data-ag-delete="' + ev.id + '">Supprimer</button>' +
+        '</span></div>';
+    }).join('');
+  }
+
+  function loadEventIntoForm(id){
+    var ev = state.agenda.events.find(function(e){ return e.id === id; });
+    if (!ev) return;
+    document.getElementById('ag-event-id').value = ev.id;
+    document.getElementById('ag-time').value = ev.time || '';
+    document.getElementById('ag-title').value = ev.title || '';
+    document.getElementById('ag-notes').value = ev.notes || '';
+    document.getElementById('ag-btn-save').textContent = 'Enregistrer';
+    document.getElementById('ag-title').focus();
+  }
+
+  function deleteAgendaEvent(id){
+    var ev = state.agenda.events.find(function(e){ return e.id === id; });
+    if (!ev) return;
+    if (!confirm('Supprimer « ' + (ev.title || 'ce rendez-vous') + ' » ?')) return;
+    var dateStr = ev.date;
+    state.agenda.events = state.agenda.events.filter(function(e){ return e.id !== id; });
+    renderExistingEventsList(dateStr);
+    renderAgenda();
+    persist();
+  }
+
+  function submitAgendaEvent(ev){
+    try {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      var formError = document.getElementById('agenda-form-error');
+      var title = document.getElementById('ag-title').value.trim();
+      if (!title) {
+        formError.textContent = 'Merci de renseigner au moins un titre.';
+        formError.hidden = false;
+        return;
+      }
+      formError.hidden = true;
+      var id = document.getElementById('ag-event-id').value;
+      var dateStr = document.getElementById('ag-event-date').value;
+      var data = {
+        date: dateStr,
+        time: document.getElementById('ag-time').value.trim(),
+        title: title,
+        notes: document.getElementById('ag-notes').value.trim()
+      };
+      if (id) {
+        var existing = state.agenda.events.find(function(e){ return e.id === id; });
+        if (existing) Object.assign(existing, data);
+      } else {
+        state.agenda.events.push(Object.assign({ id: uid() }, data));
+      }
+      document.getElementById('ag-event-id').value = '';
+      document.getElementById('ag-time').value = '';
+      document.getElementById('ag-title').value = '';
+      document.getElementById('ag-notes').value = '';
+      document.getElementById('ag-btn-save').textContent = 'Ajouter';
+      renderExistingEventsList(dateStr);
+      renderAgenda();
+      persist();
+    } catch (err) {
+      var fe = document.getElementById('agenda-form-error');
+      fe.textContent = 'Erreur inattendue : ' + err.message;
+      fe.hidden = false;
+      console.error(err);
+    }
+  }
+
+  function exportData(){
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'suivi-these-' + dateKey() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importData(file){
+    try {
+      var text = await file.text();
+      var parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object') throw new Error('format invalide');
+      if (!confirm("Importer ce fichier remplacera toutes les données actuelles de l'application. Continuer ?")) return;
+      state = normalizeState(parsed);
+      renderAll();
+      toast('Import réussi');
+      persist();
+    } catch (err) {
+      alert('Impossible de lire ce fichier : ' + err.message);
+    }
+  }
+
+  /* ---------- events ---------- */
+  function attachEvents(){
+    var TAB_IDS = ['quests', 'weekly', 'matrix', 'agenda'];
+    document.querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        activeTab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+        TAB_IDS.forEach(function(t){ document.getElementById('tab-' + t).hidden = (t !== activeTab); });
+      });
+    });
+
+    document.getElementById('quest-list').addEventListener('change', function(e){
+      if (e.target.classList.contains('quest-check')) toggleQuest(e.target.dataset.id);
+    });
+
+    document.getElementById('btn-add-template').addEventListener('click', function(){
+      var input = document.getElementById('new-template-label');
+      var val = input.value.trim();
+      if (!val) return;
+      addTemplate(val);
+      input.value = '';
+    });
+    document.getElementById('new-template-label').addEventListener('keydown', function(e){
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-template').click(); }
+    });
+
+    document.getElementById('template-list').addEventListener('click', function(e){
+      var id = e.target.dataset.removeTemplate;
+      if (id) removeTemplate(id);
+    });
+
+    document.getElementById('weekly-quest-list').addEventListener('change', function(e){
+      if (e.target.classList.contains('quest-check')) toggleWeeklyQuest(e.target.dataset.id);
+    });
+
+    document.getElementById('btn-add-weekly-template').addEventListener('click', function(){
+      var input = document.getElementById('new-weekly-template-label');
+      var val = input.value.trim();
+      if (!val) return;
+      addWeeklyTemplate(val);
+      input.value = '';
+    });
+    document.getElementById('new-weekly-template-label').addEventListener('keydown', function(e){
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-weekly-template').click(); }
+    });
+
+    document.getElementById('weekly-template-list').addEventListener('click', function(e){
+      var id = e.target.dataset.removeWeeklyTemplate;
+      if (id) removeWeeklyTemplate(id);
+    });
+
+    document.getElementById('search-input').addEventListener('input', function(e){
+      searchQuery = e.target.value;
+      renderMatrix();
+    });
+
+    document.querySelectorAll('#lit-table th[data-sort]').forEach(function(th){
+      th.addEventListener('click', function(){
+        var key = th.dataset.sort;
+        if (sortKey === key) sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
+        else { sortKey = key; sortDir = 'desc'; }
+        renderMatrix();
+      });
+    });
+
+    document.getElementById('btn-add-entry').addEventListener('click', function(){ openModal(null); });
+    document.getElementById('btn-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal-overlay').addEventListener('click', function(e){
+      if (e.target.id === 'modal-overlay') closeModal();
+    });
+    document.getElementById('btn-save-entry').addEventListener('click', submitEntry);
+    document.getElementById('entry-form').addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); submitEntry(e); }
+    });
+
+    document.getElementById('lit-tbody').addEventListener('click', function(e){
+      var editId = e.target.dataset.edit;
+      var delId = e.target.dataset.delete;
+      if (editId) { openModal(state.literature.find(function(x){ return x.id === editId; })); return; }
+      if (delId) { deleteEntry(delId); return; }
+    });
+
+    document.getElementById('cal-prev').addEventListener('click', function(){
+      calViewDate.setMonth(calViewDate.getMonth() - 1);
+      renderAgenda();
+    });
+    document.getElementById('cal-next').addEventListener('click', function(){
+      calViewDate.setMonth(calViewDate.getMonth() + 1);
+      renderAgenda();
+    });
+    document.getElementById('cal-today').addEventListener('click', function(){
+      calViewDate = new Date();
+      renderAgenda();
+    });
+    document.getElementById('cal-grid').addEventListener('click', function(e){
+      if (e.target.closest('a')) return;
+      var cell = e.target.closest('.cal-day');
+      if (!cell) return;
+      openDayModal(cell.dataset.date);
+    });
+
+    document.getElementById('ag-btn-save').addEventListener('click', submitAgendaEvent);
+    document.getElementById('ag-btn-cancel').addEventListener('click', closeDayModal);
+    document.getElementById('agenda-modal-overlay').addEventListener('click', function(e){
+      if (e.target.id === 'agenda-modal-overlay') closeDayModal();
+    });
+    document.getElementById('agenda-modal').addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); submitAgendaEvent(e); }
+    });
+    document.getElementById('agenda-existing-list').addEventListener('click', function(e){
+      var editId = e.target.dataset.agEdit;
+      var delId = e.target.dataset.agDelete;
+      if (editId) { loadEventIntoForm(editId); return; }
+      if (delId) { deleteAgendaEvent(delId); return; }
+    });
+
+    document.getElementById('btn-export').addEventListener('click', exportData);
+    document.getElementById('btn-import').addEventListener('click', function(){ document.getElementById('import-file').click(); });
+    document.getElementById('import-file').addEventListener('change', function(e){
+      var file = e.target.files[0];
+      if (file) importData(file);
+      e.target.value = '';
+    });
+
+    document.addEventListener('keydown', function(e){
+      if (e.key !== 'Escape') return;
+      if (!document.getElementById('modal-overlay').hidden) closeModal();
+      if (!document.getElementById('agenda-modal-overlay').hidden) closeDayModal();
+    });
+  }
+
+  /* ---------- init ---------- */
+  (async function init(){
+    state = await loadState();
+    renderAll();
+    attachEvents();
+  })();
+
+})();
+</script>
+</body>
+</html>
