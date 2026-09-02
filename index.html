@@ -172,7 +172,10 @@
   .modal h2 { font-family: var(--font-display); font-size: 13px; margin: 0 0 8px; color: var(--gold); font-weight: normal; }
   .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
   .form-error { color: var(--danger); font-size: 12px; margin: 0; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .sync-status { font-size: 12px; color: var(--muted); margin: -4px 0 4px; }
+  .sync-link-block { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .sync-link-hint { font-size: 11px; color: var(--muted); margin: 0 0 6px; }
 
   /* ---------- toast ---------- */
   #toast-layer { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; pointer-events: none; }
@@ -251,6 +254,7 @@
         <div class="hud-streak">&#128293;<span id="streak-num">0</span></div>
       </div>
       <div class="hud-actions">
+        <button id="btn-sync" class="btn btn-ghost" type="button" title="Synchronisation entre appareils">Sync</button>
         <button id="btn-export" class="btn btn-ghost" type="button" title="Exporter les données">Exporter</button>
         <button id="btn-import" class="btn btn-ghost" type="button" title="Importer des données">Importer</button>
         <input type="file" id="import-file" accept="application/json" hidden>
@@ -387,8 +391,39 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="sync-modal-overlay" hidden>
+    <div class="modal" id="sync-modal">
+      <h2>Synchronisation entre appareils</h2>
+      <p class="sync-status" id="sync-status"></p>
+
+      <label>Config Firebase (colle l'objet firebaseConfig depuis la console Firebase)
+        <textarea id="sync-config-input" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "databaseURL": "https://...firebasedatabase.app", "projectId": "...", ... }'></textarea>
+      </label>
+      <label>Clé de synchronisation (comme un mot de passe — ne la partage pas publiquement)
+        <div class="inline-form">
+          <input type="text" id="sync-key-input" placeholder="ex: a1b2c3d4e5f6…">
+          <button type="button" class="btn btn-ghost" id="btn-gen-key">Générer</button>
+        </div>
+      </label>
+      <p class="form-error" id="sync-form-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btn-sync-cancel">Fermer</button>
+        <button type="button" class="btn btn-danger" id="btn-sync-disable" hidden>Désactiver</button>
+        <button type="button" class="btn btn-accent-teal" id="btn-sync-activate">Activer la synchronisation</button>
+      </div>
+
+      <div class="sync-link-block" id="sync-link-block" hidden>
+        <p class="sync-link-hint">Pour configurer un autre appareil en un clic, garde ce lien quelque part privé (gestionnaire de mots de passe, note perso) :</p>
+        <div class="search-wrap"><input type="text" id="sync-link-output" readonly></div>
+        <button type="button" class="btn btn-ghost" id="btn-copy-sync-link">Copier le lien</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-layer" aria-live="polite"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script>
 (function(){
   'use strict';
@@ -501,11 +536,68 @@
     } catch (e) { return false; }
   })();
 
+  /* Rempli automatiquement ici si tu veux que la config Firebase soit préconfigurée
+     pour tous les appareils qui ouvrent ce fichier (ex: version hébergée sur GitHub Pages).
+     Laisse à null sinon : chacun devra coller sa config dans la fenêtre "Sync". */
+  var DEFAULT_FIREBASE_CONFIG = null;
+
+  var SYNC_CONFIG_KEY = 'suivi-these-sync-config';
+  var fsDb = null;
+  function loadSyncConfig(){
+    if (!hasLocalStorage) return null;
+    try {
+      var raw = window.localStorage.getItem(SYNC_CONFIG_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* config illisible, ignorée */ }
+    return null;
+  }
+  function saveSyncConfigLocal(cfg){
+    if (!hasLocalStorage) return;
+    try { window.localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); } catch (e) {}
+  }
+  var syncConfig = loadSyncConfig();
+
   function withTimeout(promise, ms){
     return Promise.race([
       Promise.resolve(promise),
       new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms); })
     ]);
+  }
+
+  function sanitizeKey(k){
+    // Realtime Database interdit . # $ [ ] / dans les clés
+    return String(k || '').replace(/[.#$\[\]\/]/g, '-');
+  }
+
+  function initFirebaseIfNeeded(){
+    if (fsDb || !syncConfig || !syncConfig.firebaseConfig) return fsDb;
+    try {
+      if (typeof firebase === 'undefined') throw new Error('SDK Firebase non chargé');
+      if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(syncConfig.firebaseConfig);
+      fsDb = firebase.database();
+    } catch (e) {
+      console.warn('Initialisation Firebase impossible :', e);
+      fsDb = null;
+    }
+    return fsDb;
+  }
+
+  async function firestoreLoad(){
+    var db = initFirebaseIfNeeded();
+    if (!db) return { ok: false, data: null };
+    try {
+      var snap = await withTimeout(db.ref('sync/' + sanitizeKey(syncConfig.syncKey)).once('value'), 6000);
+      return { ok: true, data: (snap && snap.exists()) ? snap.val() : null };
+    } catch (e) {
+      console.warn('Lecture cloud impossible :', e);
+      return { ok: false, data: null };
+    }
+  }
+  function firestoreSave(){
+    var db = initFirebaseIfNeeded();
+    if (!db) return;
+    withTimeout(db.ref('sync/' + sanitizeKey(syncConfig.syncKey)).set({ json: JSON.stringify(state), updatedAt: Date.now() }), 6000)
+      .catch(function(e){ console.warn('Sauvegarde cloud impossible :', e); });
   }
 
   async function loadState(){
@@ -514,7 +606,14 @@
         var res = await withTimeout(window.storage.get(STORAGE_KEY, false), 4000);
         if (res && res.value) return normalizeState(JSON.parse(res.value));
       } catch (e) { /* pas encore de données sauvegardées, ou stockage indisponible */ }
-    } else if (hasLocalStorage) {
+      return defaultState();
+    }
+    if (syncConfig) {
+      var result = await firestoreLoad();
+      if (result.ok && result.data && result.data.json) return normalizeState(JSON.parse(result.data.json));
+      // cloud injoignable ou vide : repli sur la copie locale de cet appareil
+    }
+    if (hasLocalStorage) {
       try {
         var raw = window.localStorage.getItem(STORAGE_KEY);
         if (raw) return normalizeState(JSON.parse(raw));
@@ -526,7 +625,10 @@
     if (hasCloudStorage) {
       withTimeout(window.storage.set(STORAGE_KEY, JSON.stringify(state), false), 4000)
         .catch(function(e){ console.warn('Sauvegarde automatique indisponible :', e); });
-    } else if (hasLocalStorage) {
+      return;
+    }
+    if (syncConfig) firestoreSave();
+    if (hasLocalStorage) {
       try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
       catch (e) { console.warn('Sauvegarde locale indisponible :', e); }
     }
@@ -726,9 +828,11 @@
     renderAgenda();
     document.getElementById('storage-note').textContent = hasCloudStorage
       ? 'Sauvegarde automatique active.'
-      : hasLocalStorage
-        ? 'Sauvegarde automatique active dans ce navigateur — pensez à exporter de temps en temps pour une copie de secours.'
-        : 'Pas de sauvegarde automatique disponible — pensez à exporter régulièrement.';
+      : syncConfig
+        ? 'Synchronisation active entre appareils (clé ' + syncConfig.syncKey.slice(0, 4) + '…).'
+        : hasLocalStorage
+          ? 'Sauvegarde automatique active dans ce navigateur — pensez à exporter de temps en temps pour une copie de secours.'
+          : 'Pas de sauvegarde automatique disponible — pensez à exporter régulièrement.';
   }
 
   function getEventsForDate(k){
@@ -1043,6 +1147,143 @@
     }
   }
 
+  /* ---------- synchronisation entre appareils ---------- */
+  function parseFirebaseConfigInput(raw){
+    var start = raw.indexOf('{');
+    var end = raw.lastIndexOf('}');
+    if (start === -1 || end === -1 || end < start) throw new Error('objet firebaseConfig introuvable dans le texte collé');
+    var s = raw.slice(start, end + 1);
+    s = s.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
+    s = s.replace(/:\s*'([^']*)'/g, ': "$1"');
+    s = s.replace(/,(\s*[}\]])/g, '$1');
+    var parsed = JSON.parse(s);
+    if (!parsed.apiKey || !parsed.projectId) throw new Error('champs apiKey / projectId manquants');
+    if (!parsed.databaseURL) {
+      throw new Error("champ databaseURL manquant — active la Realtime Database dans la console Firebase, puis recopie la config");
+    }
+    return parsed;
+  }
+
+  function generateSyncKey(){
+    var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    var arr = new Uint8Array(24);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(arr);
+    else for (var i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+    var out = '';
+    for (var j = 0; j < arr.length; j++) out += chars[arr[j] % chars.length];
+    return out;
+  }
+
+  function buildSyncLink(){
+    var payload = JSON.stringify({ c: syncConfig.firebaseConfig, k: syncConfig.syncKey });
+    var encoded = btoa(unescape(encodeURIComponent(payload)));
+    var url = window.location.href.split('#')[0];
+    return url + '#sync=' + encoded;
+  }
+
+  function renderSyncModal(){
+    var status = document.getElementById('sync-status');
+    var disableBtn = document.getElementById('btn-sync-disable');
+    var linkBlock = document.getElementById('sync-link-block');
+    if (syncConfig) {
+      status.textContent = 'Synchronisation active sur cet appareil (clé ' +
+        syncConfig.syncKey.slice(0, 4) + '…' + syncConfig.syncKey.slice(-4) + ').';
+      disableBtn.hidden = false;
+      linkBlock.hidden = false;
+      document.getElementById('sync-link-output').value = buildSyncLink();
+    } else {
+      status.textContent = 'Synchronisation non configurée sur cet appareil.';
+      disableBtn.hidden = true;
+      linkBlock.hidden = true;
+    }
+  }
+
+  function openSyncModal(){
+    document.getElementById('sync-form-error').hidden = true;
+    var cfgInput = document.getElementById('sync-config-input');
+    var keyInput = document.getElementById('sync-key-input');
+    if (!cfgInput.value) {
+      cfgInput.value = syncConfig ? JSON.stringify(syncConfig.firebaseConfig, null, 2)
+        : (DEFAULT_FIREBASE_CONFIG ? JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2) : '');
+    }
+    if (!keyInput.value && syncConfig) keyInput.value = syncConfig.syncKey;
+    renderSyncModal();
+    var overlay = document.getElementById('sync-modal-overlay');
+    overlay.hidden = false;
+    overlay.style.display = 'flex';
+  }
+  function closeSyncModal(){
+    var overlay = document.getElementById('sync-modal-overlay');
+    overlay.hidden = true;
+    overlay.style.display = 'none';
+  }
+
+  async function activateSync(){
+    var errEl = document.getElementById('sync-form-error');
+    errEl.hidden = true;
+    var rawConfig = document.getElementById('sync-config-input').value.trim();
+    var key = document.getElementById('sync-key-input').value.trim();
+    if (!rawConfig || !key) {
+      errEl.textContent = 'Merci de renseigner la config Firebase et une clé.';
+      errEl.hidden = false;
+      return;
+    }
+    var parsedConfig;
+    try { parsedConfig = parseFirebaseConfigInput(rawConfig); }
+    catch (err) {
+      errEl.textContent = 'Config Firebase illisible : ' + err.message;
+      errEl.hidden = false;
+      return;
+    }
+
+    var previousSyncConfig = syncConfig;
+    syncConfig = { firebaseConfig: parsedConfig, syncKey: key };
+    fsDb = null;
+    var db = initFirebaseIfNeeded();
+    if (!db) {
+      errEl.textContent = "Connexion à Firebase impossible avec cette config.";
+      errEl.hidden = false;
+      syncConfig = previousSyncConfig;
+      fsDb = null;
+      return;
+    }
+
+    var result = await firestoreLoad();
+    if (!result.ok) {
+      errEl.textContent = 'Connexion au cloud impossible pour le moment (réseau ?). Réessaie.';
+      errEl.hidden = false;
+      syncConfig = previousSyncConfig;
+      fsDb = null;
+      return;
+    }
+    if (result.data && result.data.json) {
+      if (!confirm('Des données existent déjà dans le cloud pour cette clé. Les charger va remplacer les données actuelles de CET appareil. Continuer ?')) {
+        syncConfig = previousSyncConfig;
+        fsDb = null;
+        return;
+      }
+      state = normalizeState(JSON.parse(result.data.json));
+    } else {
+      firestoreSave();
+    }
+    saveSyncConfigLocal(syncConfig);
+    renderAll();
+    renderSyncModal();
+    toast('Synchronisation activée');
+  }
+
+  function disableSync(){
+    if (!confirm('Désactiver la synchronisation sur cet appareil ? Tes données restent sauvegardées localement dans ce navigateur.')) return;
+    syncConfig = null;
+    fsDb = null;
+    if (hasLocalStorage) { try { window.localStorage.removeItem(SYNC_CONFIG_KEY); } catch (e) {} }
+    document.getElementById('sync-config-input').value = '';
+    document.getElementById('sync-key-input').value = '';
+    renderSyncModal();
+    renderAll();
+    toast('Synchronisation désactivée');
+  }
+
   function exportData(){
     var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -1194,11 +1435,46 @@
       e.target.value = '';
     });
 
+    document.getElementById('btn-sync').addEventListener('click', openSyncModal);
+    document.getElementById('btn-sync-cancel').addEventListener('click', closeSyncModal);
+    document.getElementById('sync-modal-overlay').addEventListener('click', function(e){
+      if (e.target.id === 'sync-modal-overlay') closeSyncModal();
+    });
+    document.getElementById('btn-gen-key').addEventListener('click', function(){
+      document.getElementById('sync-key-input').value = generateSyncKey();
+    });
+    document.getElementById('btn-sync-activate').addEventListener('click', activateSync);
+    document.getElementById('btn-sync-disable').addEventListener('click', disableSync);
+    document.getElementById('btn-copy-sync-link').addEventListener('click', function(){
+      var input = document.getElementById('sync-link-output');
+      input.select();
+      try {
+        navigator.clipboard.writeText(input.value).then(function(){ toast('Lien copié'); });
+      } catch (e) {
+        try { document.execCommand('copy'); toast('Lien copié'); } catch (e2) {}
+      }
+    });
+
     document.addEventListener('keydown', function(e){
       if (e.key !== 'Escape') return;
       if (!document.getElementById('modal-overlay').hidden) closeModal();
       if (!document.getElementById('agenda-modal-overlay').hidden) closeDayModal();
+      if (!document.getElementById('sync-modal-overlay').hidden) closeSyncModal();
     });
+  }
+
+  function tryAutoConfigFromHash(){
+    var m = /sync=([^&]+)/.exec(window.location.hash);
+    if (!m) return;
+    try {
+      var payload = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+      if (!payload || !payload.c || !payload.k) return;
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      document.getElementById('sync-config-input').value = JSON.stringify(payload.c, null, 2);
+      document.getElementById('sync-key-input').value = payload.k;
+      openSyncModal();
+      activateSync();
+    } catch (e) { /* lien invalide, ignoré silencieusement */ }
   }
 
   /* ---------- init ---------- */
@@ -1206,6 +1482,7 @@
     state = await loadState();
     renderAll();
     attachEvents();
+    tryAutoConfigFromHash();
   })();
 
 })();
