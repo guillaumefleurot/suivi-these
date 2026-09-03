@@ -67,6 +67,25 @@
     transition: width .4s steps(10);
   }
   .hud-streak { font-size: 13px; white-space: nowrap; }
+  .hud-title-text { display: flex; flex-direction: column; gap: 2px; }
+  .hud-rank { font-size: 10px; color: var(--gold); letter-spacing: 0.5px; }
+  .hud-combo {
+    font-size: 10px; color: var(--bg); background: var(--gold); padding: 2px 6px;
+    border: 2px solid var(--gold); white-space: nowrap; animation: comboPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes comboPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+  .badges-summary { font-size: 11px; color: var(--muted); margin: 0 0 12px; }
+  .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 60vh; overflow-y: auto; }
+  .badge-card {
+    background: var(--bg-alt); border: 2px solid var(--border); padding: 10px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .badge-card.unlocked { border-color: var(--gold-dim); background: var(--panel); }
+  .badge-icon { font-size: 20px; opacity: 0.3; }
+  .badge-card.unlocked .badge-icon { opacity: 1; }
+  .badge-label { font-size: 12px; color: var(--muted); }
+  .badge-card.unlocked .badge-label { color: var(--gold); }
+  .badge-desc { font-size: 11px; color: var(--muted); }
   .hud-actions { display: flex; gap: 8px; }
 
   /* ---------- buttons ---------- */
@@ -174,7 +193,8 @@
   .modal h2 { font-family: var(--font-display); font-size: 13px; margin: 0 0 8px; color: var(--gold); font-weight: normal; }
   .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
   .form-error { color: var(--danger); font-size: 12px; margin: 0; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+  .modal-actions .spacer { flex: 1; }
   .sync-status { font-size: 12px; color: var(--muted); margin: -4px 0 4px; }
   .sync-link-block { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
   .sync-link-hint { font-size: 11px; color: var(--muted); margin: 0 0 6px; }
@@ -328,14 +348,19 @@
     <header class="hud pixel-panel">
       <div class="hud-title">
         <span class="hud-mark">&#9670;</span>
-        <span class="hud-name">Suivi de Thèse</span>
+        <div class="hud-title-text">
+          <span class="hud-name">Suivi de Thèse</span>
+          <span class="hud-rank" id="hud-rank">Postulant</span>
+        </div>
       </div>
       <div class="hud-stats">
         <div class="hud-level">Niv. <span id="level-num">1</span></div>
         <div class="xp-bar-track"><div class="xp-bar-fill" id="xp-fill"></div></div>
         <div class="hud-streak">&#128293;<span id="streak-num">0</span></div>
+        <div class="hud-combo" id="hud-combo" hidden>Combo</div>
       </div>
       <div class="hud-actions">
+        <button id="btn-badges" class="btn btn-ghost" type="button" title="Voir mes badges">🏅 Badges</button>
         <button id="btn-sync" class="btn btn-ghost" type="button" title="Synchronisation entre appareils">Sync</button>
         <button id="btn-export" class="btn btn-ghost" type="button" title="Exporter les données">Exporter</button>
         <button id="btn-import" class="btn btn-ghost" type="button" title="Importer des données">Importer</button>
@@ -513,6 +538,8 @@
       <label>Notes (les liens http(s) deviennent cliquables)<textarea id="ag-notes" rows="3" placeholder="https://…"></textarea></label>
       <p class="form-error" id="agenda-form-error" hidden></p>
       <div class="modal-actions">
+        <button type="button" class="btn btn-danger" id="ag-btn-delete" hidden>Supprimer</button>
+        <span class="spacer"></span>
         <button type="button" class="btn btn-ghost" id="ag-btn-cancel">Fermer</button>
         <button type="button" class="btn btn-accent-teal" id="ag-btn-save">Ajouter</button>
       </div>
@@ -525,6 +552,17 @@
       <div class="history-body" id="history-body"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="history-btn-close">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="badges-modal-overlay" hidden>
+    <div class="modal" id="badges-modal">
+      <h2>Badges</h2>
+      <p class="badges-summary" id="badges-summary"></p>
+      <div class="badges-grid" id="badges-grid"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="badges-btn-close">Fermer</button>
       </div>
     </div>
   </div>
@@ -587,6 +625,118 @@
   var XP_PER_QUEST = 10;
   var XP_PER_WEEKLY_QUEST = 30;
   var XP_PER_ENTRY = 15;
+  var XP_TASK_BASE = 15;
+  // XP tâche = base × mult(importance) × mult(urgence), arrondi
+  var TASK_IMPORTANCE_MULT = { 1: 3, 2: 1.5, 3: 1 };
+  var TASK_URGENCY_MULT    = { 1: 1.5, 2: 1, 3: 0.75 };
+  // combo : bonus multiplicatif selon les jours d'affilée avec au moins une action XP
+  var COMBO_TIERS = [
+    { days: 30, mult: 1.5, label: '× 1,5' },
+    { days: 14, mult: 1.3, label: '× 1,3' },
+    { days: 7,  mult: 1.2, label: '× 1,2' },
+    { days: 3,  mult: 1.1, label: '× 1,1' }
+  ];
+
+  // rangs par palier de niveau (adaptés au parcours doctoral)
+  var RANKS = [
+    { min: 1,  title: 'Postulant' },
+    { min: 4,  title: 'Apprenti chercheur' },
+    { min: 8,  title: 'Doctorant' },
+    { min: 13, title: 'Doctorant confirmé' },
+    { min: 19, title: 'Docteur' },
+    { min: 26, title: 'Post-doctorant' },
+    { min: 36, title: 'Maître de conférences' },
+    { min: 51, title: 'Professeur' },
+    { min: 71, title: 'Directeur de recherche' }
+  ];
+
+  // badges — chaque badge = 25 XP bonus lorsqu'il se débloque
+  var XP_BADGE_BONUS = 25;
+  var BADGES = [
+    /* ============ COURT TERME — premières semaines ============ */
+    { id: 'first-step',      label: 'Premier pas',           desc: 'Cocher une première quête ou terminer une première tâche.',
+      check: function(s){ return s.stats.totalActions >= 1; } },
+    { id: 'lit-10',          label: 'Bibliothécaire',        desc: 'Ajouter 10 références à la matrice de littérature.',
+      check: function(s){ return s.literature.length >= 10; } },
+    { id: 'task-first',      label: 'Mission accomplie',     desc: 'Terminer une première tâche ponctuelle.',
+      check: function(s){ return s.agenda.events.some(function(t){ return t.done; }); } },
+    { id: 'important-done',  label: 'Prioritaire',           desc: 'Terminer une tâche d\'importance haute.',
+      check: function(s){ return s.agenda.events.some(function(t){ return t.done && t.importance === 1; }); } },
+    { id: 'weekly-first',    label: 'Semaine cadrée',        desc: 'Cocher au moins une quête hebdomadaire.',
+      check: function(s){ return Object.keys(s.quests.weeklyLog).some(function(k){ return s.quests.weeklyLog[k].completed.length > 0; }); } },
+    { id: 'streak-3',        label: 'En rythme',             desc: '3 jours d\'affilée avec au moins une action.',
+      check: function(s){ return computeActionStreak(s) >= 3; } },
+    { id: 'streak-7',        label: 'Assidu',                desc: '7 jours d\'affilée. Le pli est pris.',
+      check: function(s){ return computeActionStreak(s) >= 7; } },
+    { id: 'big-day',         label: 'Grosse journée',        desc: 'Gagner 100 XP en une seule journée.',
+      check: function(s){ return (s.stats.dailyXP && Object.values(s.stats.dailyXP).some(function(v){ return v >= 100; })); } },
+    { id: 'marathon-day',    label: 'Marathon d\'une journée', desc: 'Gagner 200 XP en une seule journée.',
+      check: function(s){ return (s.stats.dailyXP && Object.values(s.stats.dailyXP).some(function(v){ return v >= 200; })); } },
+    { id: 'sprint-hebdo',    label: 'Sprint hebdo',          desc: 'Cocher toutes tes quêtes hebdomadaires en une même semaine.',
+      check: function(s){
+        var tpls = s.quests.weeklyTemplates || [];
+        if (!tpls.length) return false;
+        var ids = tpls.map(function(t){ return t.id; });
+        return Object.keys(s.quests.weeklyLog).some(function(k){
+          var done = s.quests.weeklyLog[k].completed;
+          return ids.every(function(id){ return done.indexOf(id) !== -1; });
+        });
+      } },
+
+    /* ============ MOYEN TERME — quelques mois ============ */
+    { id: 'lit-50',          label: 'Rat de bibliothèque',   desc: 'Atteindre 50 références.',
+      check: function(s){ return s.literature.length >= 50; } },
+    { id: 'task-10',         label: 'Efficace',              desc: 'Terminer 10 tâches ponctuelles.',
+      check: function(s){ return s.agenda.events.filter(function(t){ return t.done; }).length >= 10; } },
+    { id: 'priority-10',     label: 'Priorité respectée',    desc: 'Terminer 10 tâches d\'urgence haute.',
+      check: function(s){ return s.agenda.events.filter(function(t){ return t.done && t.urgency === 1; }).length >= 10; } },
+    { id: 'focus-laser',     label: 'Focus laser',           desc: 'Terminer 5 tâches à la fois d\'urgence haute ET d\'importance haute.',
+      check: function(s){ return s.agenda.events.filter(function(t){ return t.done && t.urgency === 1 && t.importance === 1; }).length >= 5; } },
+    { id: 'streak-30',       label: 'Marathonien',           desc: '30 jours d\'affilée. Chapeau.',
+      check: function(s){ return computeActionStreak(s) >= 30; } },
+    { id: 'xp-1000',         label: 'Premier millier',       desc: 'Cumuler 1 000 XP au total.',
+      check: function(s){ return s.stats.xp >= 1000; } },
+    { id: 'ravageur-pdf',    label: 'Ravageur de PDF',       desc: 'Ajouter 5 références en 7 jours (rythme lecture soutenu).',
+      check: function(s){
+        var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+        var cutoffKey = dateKey(cutoff);
+        return s.literature.filter(function(r){ return r.dateAdded && r.dateAdded >= cutoffKey; }).length >= 5;
+      } },
+    { id: 'rank-doctorant',  label: 'Doctorant confirmé',    desc: 'Atteindre le rang « Doctorant ».',
+      check: function(s){ return levelFor(s.stats.xp) >= 8; } },
+
+    /* ============ LONG TERME — un semestre à un an ============ */
+    { id: 'semestre-solide', label: 'Semestre solide',       desc: '90 jours d\'action au total. Tu tiens la route.',
+      check: function(s){ return (s.stats.actionDays || []).length >= 90; } },
+    { id: 'lit-100',         label: 'Docteur en herbe',      desc: 'Atteindre 100 références.',
+      check: function(s){ return s.literature.length >= 100; } },
+    { id: 'task-50',         label: 'Perfectionniste',       desc: 'Terminer 50 tâches ponctuelles.',
+      check: function(s){ return s.agenda.events.filter(function(t){ return t.done; }).length >= 50; } },
+    { id: 'streak-60',       label: 'Combo légendaire',      desc: '60 jours d\'affilée sans manquer.',
+      check: function(s){ return computeActionStreak(s) >= 60; } },
+    { id: 'rank-docteur',    label: 'Sur les épaules des géants', desc: 'Atteindre le rang « Docteur ».',
+      check: function(s){ return levelFor(s.stats.xp) >= 19; } },
+
+    /* ============ TRÈS LONG TERME — année 2 et 3 ============ */
+    { id: 'annee-these',     label: 'Année de thèse',        desc: '300 jours d\'action au total. Une vraie année de travail.',
+      check: function(s){ return (s.stats.actionDays || []).length >= 300; } },
+    { id: 'lit-250',         label: 'Encyclopédie',          desc: '250 références dans ta matrice. Une vraie base bibliographique.',
+      check: function(s){ return s.literature.length >= 250; } },
+    { id: 'lit-500',         label: 'Bibliothèque nationale', desc: '500 références. Tu pourrais publier une revue de littérature à toi seul.',
+      check: function(s){ return s.literature.length >= 500; } },
+    { id: 'task-200',        label: 'Machine à cocher',      desc: '200 tâches ponctuelles terminées. Efficacité redoutable.',
+      check: function(s){ return s.agenda.events.filter(function(t){ return t.done; }).length >= 200; } },
+    { id: 'xp-10000',        label: 'Dix mille XP',          desc: 'Cumuler 10 000 XP. Le compteur explose.',
+      check: function(s){ return s.stats.xp >= 10000; } },
+    { id: 'streak-100',      label: 'Insubmersible',         desc: '100 jours d\'affilée. Discipline monastique.',
+      check: function(s){ return computeActionStreak(s) >= 100; } },
+    { id: 'rank-post-doc',   label: 'Docteur en devenir',    desc: 'Atteindre le rang « Post-doctorant ».',
+      check: function(s){ return levelFor(s.stats.xp) >= 26; } },
+    { id: 'rank-mcf',        label: 'Cap sur la soutenance', desc: 'Atteindre le rang « Maître de conférences ».',
+      check: function(s){ return levelFor(s.stats.xp) >= 36; } },
+    { id: 'rank-directeur',  label: 'Sommet académique',     desc: 'Atteindre le rang « Directeur de recherche ». Le Graal.',
+      check: function(s){ return levelFor(s.stats.xp) >= 71; } }
+  ];
 
   /* ---------- utils ---------- */
   function uid(){
@@ -619,6 +769,40 @@
     });
   }
 
+  // Formate librement une heure saisie : "9" / "9h" / "09" / "930" / "9h30" / "9h3" / "9:5" ...
+  // -> "09:00", "09:30", "09:50". Règle pour un seul chiffre de minutes :
+  // on essaie d'abord chiffre*10 (car "9h3" veut dire 9h30) ; si le résultat dépasse 59,
+  // on complète à gauche à la place. Si la valeur est invalide (25h, 9h99), on renvoie tel quel.
+  function formatTimeLoose(raw){
+    if (!raw) return '';
+    var s = String(raw).trim().toLowerCase().replace(/\s+/g, '');
+    if (!s) return '';
+    var h = null, m = null;
+    var withSep = s.match(/^(\d{1,2})[h:.,](\d{0,2})$/);
+    if (withSep) {
+      h = parseInt(withSep[1], 10);
+      var mRaw = withSep[2];
+      if (mRaw === '') {
+        m = 0;
+      } else if (mRaw.length === 1) {
+        var m10 = parseInt(mRaw, 10) * 10;
+        m = m10 <= 59 ? m10 : parseInt(mRaw, 10);
+      } else {
+        m = parseInt(mRaw, 10);
+      }
+    } else if (/^\d+$/.test(s)) {
+      if (s.length <= 2) { h = parseInt(s, 10); m = 0; }
+      else if (s.length === 3) { h = parseInt(s.slice(0, 1), 10); m = parseInt(s.slice(1), 10); }
+      else if (s.length === 4) { h = parseInt(s.slice(0, 2), 10); m = parseInt(s.slice(2), 10); }
+      else return raw;
+    } else {
+      return raw;
+    }
+    if (h === null || m === null || isNaN(h) || isNaN(m)) return raw;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return raw;
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+
   /* ---------- state ---------- */
   function defaultState(){
     return {
@@ -638,7 +822,7 @@
         weeklyLog: {}
       },
       agenda: { events: [] },
-      stats: { xp: 0 }
+      stats: { xp: 0, badges: [], dailyXP: {}, actionDays: [], totalActions: 0 }
     };
   }
   function normalizeState(s){
@@ -664,7 +848,13 @@
             })
           : d.agenda.events
       },
-      stats: { xp: Number(s.stats && s.stats.xp) || 0 }
+      stats: {
+        xp: Number(s.stats && s.stats.xp) || 0,
+        badges: (s.stats && Array.isArray(s.stats.badges)) ? s.stats.badges : [],
+        dailyXP: (s.stats && s.stats.dailyXP && typeof s.stats.dailyXP === 'object') ? s.stats.dailyXP : {},
+        actionDays: (s.stats && Array.isArray(s.stats.actionDays)) ? s.stats.actionDays : [],
+        totalActions: Number(s.stats && s.stats.totalActions) || 0
+      }
     };
   }
 
@@ -819,6 +1009,109 @@
   function levelFor(xp){ return Math.floor(xp / 100) + 1; }
   function xpIntoLevel(xp){ return xp % 100; }
 
+  function rankFor(level){
+    for (var i = RANKS.length - 1; i >= 0; i--) {
+      if (level >= RANKS[i].min) return RANKS[i];
+    }
+    return RANKS[0];
+  }
+
+  function computeActionStreak(s){
+    // jours consécutifs (finissant aujourd'hui ou hier) avec au moins une action XP
+    if (!s || !s.stats || !Array.isArray(s.stats.actionDays)) return 0;
+    var days = {}; s.stats.actionDays.forEach(function(d){ days[d] = true; });
+    var streak = 0;
+    var cur = new Date();
+    if (!days[dateKey(cur)]) cur.setDate(cur.getDate() - 1);
+    while (days[dateKey(cur)]) {
+      streak++;
+      cur.setDate(cur.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function currentComboMult(){
+    var s = computeActionStreak(state);
+    for (var i = 0; i < COMBO_TIERS.length; i++) {
+      if (s >= COMBO_TIERS[i].days) return COMBO_TIERS[i];
+    }
+    return null;
+  }
+
+  function taskXP(task){
+    var im = TASK_IMPORTANCE_MULT[task.importance] || 1;
+    var ur = TASK_URGENCY_MULT[task.urgency] || 1;
+    return Math.round(XP_TASK_BASE * im * ur);
+  }
+
+  function awardXP(base){
+    if (!base || base <= 0) return;
+    var combo = currentComboMult();
+    var mult = combo ? combo.mult : 1;
+    var gained = Math.round(base * mult);
+    var levelBefore = levelFor(state.stats.xp);
+
+    state.stats.xp += gained;
+    var k = dateKey();
+    state.stats.dailyXP[k] = (state.stats.dailyXP[k] || 0) + gained;
+    if (state.stats.actionDays.indexOf(k) === -1) state.stats.actionDays.push(k);
+    // borne : ne conserver que les 90 derniers jours d'historique fin
+    if (state.stats.actionDays.length > 120) {
+      state.stats.actionDays = state.stats.actionDays.sort().slice(-90);
+    }
+    state.stats.totalActions++;
+
+    var msg = '+' + gained + ' XP';
+    if (combo) msg += ' (combo ' + combo.label + ')';
+    toast(msg);
+
+    var levelAfter = levelFor(state.stats.xp);
+    if (levelAfter > levelBefore) {
+      setTimeout(function(){ toast('Nouveau niveau : ' + levelAfter + ' — ' + rankFor(levelAfter).title); }, 400);
+    }
+    checkBadges();
+  }
+
+  function refundXP(amount){
+    // annulation propre d'un XP mal donné (décochage)
+    if (!amount || amount <= 0) return;
+    var combo = currentComboMult();
+    var mult = combo ? combo.mult : 1;
+    // On retire le montant réellement crédité (pas le base). Comme l'utilisateur peut
+    // décocher plus tard, on ne peut pas garantir le mult exact ; on prend le mult courant,
+    // qui reste très proche. Erreur au pire de quelques XP.
+    var refund = Math.round(amount * mult);
+    state.stats.xp = Math.max(0, state.stats.xp - refund);
+    var k = dateKey();
+    if (state.stats.dailyXP[k]) state.stats.dailyXP[k] = Math.max(0, state.stats.dailyXP[k] - refund);
+    state.stats.totalActions = Math.max(0, state.stats.totalActions - 1);
+  }
+
+  function checkBadges(silent){
+    var newly = [];
+    BADGES.forEach(function(b){
+      if (state.stats.badges.indexOf(b.id) !== -1) return;
+      try {
+        if (b.check(state)) {
+          state.stats.badges.push(b.id);
+          state.stats.xp += XP_BADGE_BONUS;
+          newly.push(b);
+        }
+      } catch (e) { /* défensif : un badge cassé ne fait pas planter le reste */ }
+    });
+    if (newly.length && !silent) {
+      newly.forEach(function(b, i){
+        setTimeout(function(){ toast('🏅 ' + b.label + ' (+' + XP_BADGE_BONUS + ' XP)'); }, 800 + i * 900);
+      });
+    } else if (newly.length && silent) {
+      // au démarrage : un seul toast récapitulatif au lieu de N notifications
+      setTimeout(function(){
+        toast('🏅 ' + newly.length + ' badge' + (newly.length > 1 ? 's' : '') + ' débloqué' + (newly.length > 1 ? 's' : '') + ' (+' + (newly.length * XP_BADGE_BONUS) + ' XP)');
+      }, 600);
+    }
+    return newly.length > 0;
+  }
+
   function computeStreak(){
     var log = state.quests.log;
     var streak = 0;
@@ -850,9 +1143,18 @@
   /* ---------- render ---------- */
   function renderHud(){
     var xp = state.stats.xp;
-    document.getElementById('level-num').textContent = levelFor(xp);
+    var lvl = levelFor(xp);
+    document.getElementById('level-num').textContent = lvl;
     document.getElementById('xp-fill').style.width = xpIntoLevel(xp) + '%';
     document.getElementById('streak-num').textContent = computeStreak();
+    var rankEl = document.getElementById('hud-rank');
+    if (rankEl) rankEl.textContent = rankFor(lvl).title;
+    var comboEl = document.getElementById('hud-combo');
+    if (comboEl) {
+      var combo = currentComboMult();
+      if (combo) { comboEl.textContent = 'Combo ' + combo.label; comboEl.hidden = false; }
+      else { comboEl.hidden = true; }
+    }
   }
 
   function renderQuests(){
@@ -1179,8 +1481,15 @@
     if (!t) return;
     t.done = !t.done;
     t.doneAt = t.done ? Date.now() : null;
-    renderTasks();
-    renderAgenda();
+    var xp = taskXP(t);
+    if (t.done) {
+      t.xpAwarded = xp;
+      awardXP(xp);
+    } else {
+      refundXP(t.xpAwarded || xp);
+      t.xpAwarded = 0;
+    }
+    renderAll();
     persist();
   }
 
@@ -1191,6 +1500,7 @@
     document.getElementById('ag-event-id').value = id || '';
     document.getElementById('ag-event-date').value = '';
     document.getElementById('agenda-existing-list').innerHTML = '';
+    document.getElementById('ag-btn-delete').hidden = !id;
 
     if (id) {
       var t = state.agenda.events.find(function(e){ return e.id === id; });
@@ -1270,6 +1580,43 @@
     overlay.style.display = 'none';
   }
 
+  function openBadgesModal(){
+    renderBadges();
+    var overlay = document.getElementById('badges-modal-overlay');
+    overlay.hidden = false;
+    overlay.style.display = 'flex';
+  }
+  function closeBadgesModal(){
+    var overlay = document.getElementById('badges-modal-overlay');
+    overlay.hidden = true;
+    overlay.style.display = 'none';
+  }
+  function renderBadges(){
+    var unlocked = state.stats.badges || [];
+    document.getElementById('badges-summary').textContent =
+      unlocked.length + ' badge' + (unlocked.length > 1 ? 's' : '') + ' débloqué' +
+      (unlocked.length > 1 ? 's' : '') + ' sur ' + BADGES.length + ' — chaque badge rapporte ' + XP_BADGE_BONUS + ' XP bonus.';
+    var grid = document.getElementById('badges-grid');
+    grid.innerHTML = '';
+    // débloqués en tête (dans l'ordre de la liste), puis les autres
+    var ordered = BADGES.slice().sort(function(a, b){
+      var au = unlocked.indexOf(a.id) !== -1 ? 0 : 1;
+      var bu = unlocked.indexOf(b.id) !== -1 ? 0 : 1;
+      if (au !== bu) return au - bu;
+      return BADGES.indexOf(a) - BADGES.indexOf(b);
+    });
+    ordered.forEach(function(b){
+      var got = unlocked.indexOf(b.id) !== -1;
+      var card = document.createElement('div');
+      card.className = 'badge-card' + (got ? ' unlocked' : '');
+      card.innerHTML =
+        '<div class="badge-icon">' + (got ? '🏅' : '🔒') + '</div>' +
+        '<div class="badge-label">' + escapeHtml(b.label) + '</div>' +
+        '<div class="badge-desc">' + escapeHtml(b.desc) + '</div>';
+      grid.appendChild(card);
+    });
+  }
+
   /* ---------- actions ---------- */
   function toggleQuest(templateId){
     var k = dateKey();
@@ -1278,11 +1625,10 @@
     var idx = arr.indexOf(templateId);
     if (idx === -1) {
       arr.push(templateId);
-      state.stats.xp += XP_PER_QUEST;
-      toast('+' + XP_PER_QUEST + ' XP');
+      awardXP(XP_PER_QUEST);
     } else {
       arr.splice(idx, 1);
-      state.stats.xp = Math.max(0, state.stats.xp - XP_PER_QUEST);
+      refundXP(XP_PER_QUEST);
     }
     renderAll();
     persist();
@@ -1306,14 +1652,12 @@
     var idx = arr.indexOf(templateId);
     if (idx === -1) {
       arr.push(templateId);
-      state.stats.xp += XP_PER_WEEKLY_QUEST;
-      toast('+' + XP_PER_WEEKLY_QUEST + ' XP');
+      awardXP(XP_PER_WEEKLY_QUEST);
     } else {
       arr.splice(idx, 1);
-      state.stats.xp = Math.max(0, state.stats.xp - XP_PER_WEEKLY_QUEST);
+      refundXP(XP_PER_WEEKLY_QUEST);
     }
-    renderHud();
-    renderWeeklyQuests();
+    renderAll();
     persist();
   }
   function addWeeklyTemplate(label){
@@ -1379,8 +1723,7 @@
       } else {
         var newEntry = Object.assign({ id: uid(), xpAwarded: XP_PER_ENTRY, dateAdded: dateKey() }, data);
         state.literature.push(newEntry);
-        state.stats.xp += XP_PER_ENTRY;
-        toast('+' + XP_PER_ENTRY + ' XP');
+        awardXP(XP_PER_ENTRY);
       }
       closeModal();
       renderAll();
@@ -1415,6 +1758,7 @@
     document.getElementById('ag-importance').value = '2';
     document.getElementById('ag-notes').value = '';
     document.getElementById('ag-btn-save').textContent = 'Ajouter';
+    document.getElementById('ag-btn-delete').hidden = true;
 
     var d = new Date(dateStr + 'T00:00:00');
     var dateLabel = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -1461,18 +1805,20 @@
     document.getElementById('ag-importance').value = String(ev.importance || 2);
     document.getElementById('ag-notes').value = ev.notes || '';
     document.getElementById('ag-btn-save').textContent = 'Enregistrer';
+    document.getElementById('ag-btn-delete').hidden = false;
     document.getElementById('ag-title').focus();
   }
 
   function deleteAgendaEvent(id){
     var ev = state.agenda.events.find(function(e){ return e.id === id; });
-    if (!ev) return;
-    if (!confirm('Supprimer « ' + (ev.title || 'cette tâche') + ' » ?')) return;
+    if (!ev) return false;
+    if (!confirm('Supprimer « ' + (ev.title || 'cette tâche') + ' » ?')) return false;
     var dateStr = ev.date;
     state.agenda.events = state.agenda.events.filter(function(e){ return e.id !== id; });
     renderExistingEventsList(dateStr);
     renderAll();
     persist();
+    return true;
   }
 
   function submitAgendaEvent(ev){
@@ -1490,7 +1836,7 @@
       var dateVal = document.getElementById('ag-date').value.trim();
       var data = {
         date: dateVal || null,
-        time: document.getElementById('ag-time').value.trim(),
+        time: formatTimeLoose(document.getElementById('ag-time').value),
         title: title,
         urgency: parseInt(document.getElementById('ag-urgency').value, 10) || 2,
         importance: parseInt(document.getElementById('ag-importance').value, 10) || 2,
@@ -1510,6 +1856,7 @@
       document.getElementById('ag-importance').value = '2';
       document.getElementById('ag-notes').value = '';
       document.getElementById('ag-btn-save').textContent = 'Ajouter';
+      document.getElementById('ag-btn-delete').hidden = true;
       renderExistingEventsList(document.getElementById('ag-event-date').value || null);
       renderAll();
       persist();
@@ -1791,6 +2138,15 @@
 
     document.getElementById('ag-btn-save').addEventListener('click', submitAgendaEvent);
     document.getElementById('ag-btn-cancel').addEventListener('click', closeDayModal);
+    document.getElementById('ag-btn-delete').addEventListener('click', function(){
+      var id = document.getElementById('ag-event-id').value;
+      if (!id) return;
+      if (deleteAgendaEvent(id)) closeDayModal();
+    });
+    document.getElementById('ag-time').addEventListener('blur', function(e){
+      var formatted = formatTimeLoose(e.target.value);
+      if (formatted !== e.target.value) e.target.value = formatted;
+    });
     document.getElementById('agenda-modal-overlay').addEventListener('click', function(e){
       if (e.target.id === 'agenda-modal-overlay') closeDayModal();
     });
@@ -1839,6 +2195,12 @@
       if (e.target.id === 'history-modal-overlay') closeHistoryModal();
     });
 
+    document.getElementById('btn-badges').addEventListener('click', openBadgesModal);
+    document.getElementById('badges-btn-close').addEventListener('click', closeBadgesModal);
+    document.getElementById('badges-modal-overlay').addEventListener('click', function(e){
+      if (e.target.id === 'badges-modal-overlay') closeBadgesModal();
+    });
+
     document.getElementById('tasks-sort').addEventListener('change', function(e){
       tasksSortKey = e.target.value;
       renderTasks();
@@ -1866,6 +2228,7 @@
       if (!document.getElementById('agenda-modal-overlay').hidden) closeDayModal();
       if (!document.getElementById('sync-modal-overlay').hidden) closeSyncModal();
       if (!document.getElementById('history-modal-overlay').hidden) closeHistoryModal();
+      if (!document.getElementById('badges-modal-overlay').hidden) closeBadgesModal();
     });
   }
 
@@ -1890,6 +2253,8 @@
     attachEvents();
     tryAutoConfigFromHash();
     if (!hasCloudStorage && syncConfig) startRealtimeSync();
+    // rattraper les badges dont la condition est déjà remplie
+    if (checkBadges(true)) { renderHud(); persist(); }
   })();
 
 })();
