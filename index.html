@@ -236,6 +236,7 @@
     z-index: 30; text-align: left;
   }
   .cal-day:hover .cal-popover { opacity: 1; pointer-events: auto; }
+  .cal-day.showing-popover .cal-popover { opacity: 1; pointer-events: auto; }
   .cal-popover-date { color: var(--teal); margin-bottom: 6px; text-transform: capitalize; }
   .cal-popover-event { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
   .cal-popover-event:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
@@ -2133,7 +2134,30 @@
       if (e.target.closest('a')) return;
       var cell = e.target.closest('.cal-day');
       if (!cell) return;
-      openDayModal(cell.dataset.date);
+      var isTouchDevice = window.matchMedia && window.matchMedia('(hover: none)').matches;
+      if (isTouchDevice) {
+        // 2e tap sur la même case ou case sans tâche : ouvrir l'éditeur
+        if (cell.classList.contains('showing-popover') || !cell.querySelector('.cal-popover')) {
+          cell.classList.remove('showing-popover');
+          openDayModal(cell.dataset.date);
+          return;
+        }
+        // 1er tap sur une case qui a des tâches : montrer la popover, fermer les autres
+        Array.prototype.forEach.call(document.querySelectorAll('.cal-day.showing-popover'), function(c){
+          c.classList.remove('showing-popover');
+        });
+        cell.classList.add('showing-popover');
+      } else {
+        openDayModal(cell.dataset.date);
+      }
+    });
+    // sur tactile, taper ailleurs cache la popover en cours
+    document.addEventListener('click', function(e){
+      if (!e.target.closest('.cal-day')) {
+        Array.prototype.forEach.call(document.querySelectorAll('.cal-day.showing-popover'), function(c){
+          c.classList.remove('showing-popover');
+        });
+      }
     });
 
     document.getElementById('ag-btn-save').addEventListener('click', submitAgendaEvent);
